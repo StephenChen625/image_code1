@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>图像移位加密工具 - 横向工具栏</title>
+  <style>
+    /* 全局基础样式 */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      background-color: #f8f9fa;
+      color: #333;
+      margin: 20px;
+    }
+    h1 {
+      font-size: 1.5rem;
+      margin-bottom: 10px;
+    }
+    h3, h4 {
+      margin-top: 0.5rem;
+      margin-bottom: 0.5rem;
+    }
+    button, input {
+      font-size: 14px;
+    }
+
+    /****************
+     * 顶部工具栏
+     ****************/
+    .toolbar {
+      display: flex;
+      align-items: center;
+      background-color: #fff;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 10px;
+      box-shadow: 0 0 6px rgba(0, 0, 0, 0.05);
+      margin-bottom: 20px;
+      gap: 10px; /* 工具栏区块之间的横向间隔 */
+    }
+
+    .toolbar-section {
+      display: flex;
+      align-items: center;
+      gap: 5px; /* 同一模块内控件的间隔 */
+    }
+
+    /* 竖线分隔器 */
+    .divider {
+      width: 1px;
+      background-color: #ddd;
+      height: 24px; /* 分隔线的高度 */
+      margin: 0 10px;
+    }
+
+    label {
+      font-weight: 600;
+      margin-right: 5px;
+    }
+
+    input[type="number"] {
+      width: 60px;
+      margin-right: 5px;
+    }
+
+    /* 按钮样式（简化Bootstrap风格） */
+    button {
+      background: #007bff;
+      border: none;
+      border-radius: 4px;
+      color: #fff;
+      padding: 5px 10px;
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }
+    button:hover {
+      background: #0056b3;
+    }
+
+    /****************
+     * 下方主内容区
+     ****************/
+    .mainContent {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* 原图/Canvas区 */
+    #originalImg {
+      max-width: 100%;
+      display: none; 
+      margin: 10px 0;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    #displayCanvas {
+      border: 1px solid #ccc;
+      margin-top: 10px;
+      border-radius: 4px;
+      display: none;
+      max-width: 100%;
+    }
+
+    /* 拖拽排序容器 */
+    #orderContainer {
+      padding: 10px;
+      background-color: #fff;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      box-shadow: 0 0 6px rgba(0, 0, 0, 0.05);
+    }
+    #orderList {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    #orderList li {
+      background-color: #e9ecef;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      margin: 3px 6px;
+      padding: 5px 10px;
+      display: inline-block;
+      cursor: move;
+      transition: background-color 0.2s ease;
+    }
+    #orderList li.dragover {
+      background-color: #cfe2ff;
+      border-color: #9ec5fe;
+    }
+
+  </style>
+</head>
+<body>
+
+<h1>图像移位加密工具</h1>
+
+<!-- 顶部工具栏 -->
+<div class="toolbar">
+  <!-- 加载图片区 -->
+  <div class="toolbar-section">
+    <button id="loadDefaultBtn">加载默认图</button>
+    <input type="file" id="fileInput" accept="image/*">
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 分割区 -->
+  <div class="toolbar-section">
+    <label>竖切:</label>
+    <input type="number" id="verticalSlices" value="3" min="1">
+
+    <label>横切:</label>
+    <input type="number" id="horizontalSlices" value="1" min="1">
+
+    <button id="sliceBtn">分割</button>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 栅栏加解密区 -->
+  <div class="toolbar-section">
+    <label>分组:</label>
+    <input type="number" id="fenceGroupSize" value="3" min="1">
+    <button id="fenceEncryptBtn">栅栏加密</button>
+    <button id="fenceDecryptBtn">栅栏解密</button>
+    <button id="randomShuffleBtn">随机打乱</button>
+  </div>
+</div>
+
+<!-- 主内容区：显示原图或切割结果，以及拖拽列表 -->
+<div class="mainContent">
+  <div>
+    <h3>原图 / 切割结果</h3>
+    <img id="originalImg" alt="原图预览">
+    <canvas id="displayCanvas"></canvas>
+  </div>
+
+  <div id="orderContainer" style="display: none;">
+    <h4>拖拽以自定义切片顺序 (编号随切片走):</h4>
+    <ul id="orderList"></ul>
+  </div>
+</div>
+
+<script>
+/*******************************************************
+ * 全局变量
+ *******************************************************/
+const fileInput = document.getElementById('fileInput');
+const loadDefaultBtn = document.getElementById('loadDefaultBtn');
+const verticalSlicesInput = document.getElementById('verticalSlices');
+const horizontalSlicesInput = document.getElementById('horizontalSlices');
+const sliceBtn = document.getElementById('sliceBtn');
+
+const fenceGroupSizeInput = document.getElementById('fenceGroupSize');
+const fenceEncryptBtn = document.getElementById('fenceEncryptBtn');
+const fenceDecryptBtn = document.getElementById('fenceDecryptBtn');
+const randomShuffleBtn = document.getElementById('randomShuffleBtn');
+
+const originalImg = document.getElementById('originalImg');
+const displayCanvas = document.getElementById('displayCanvas');
+const displayCtx = displayCanvas.getContext('2d');
+
+const orderContainer = document.getElementById('orderContainer');
+const orderList = document.getElementById('orderList');
+
+let loadedImage = new Image();    // 存放原图
+let slices = [];                  // 用于存放分割后的切片信息
+
+/*******************************************************
+ * 加载图片相关
+ *******************************************************/
+// 加载默认图片
+loadDefaultBtn.addEventListener('click', () => {
+  loadImage('image_code.png');
+});
+
+// 从本地文件加载
+fileInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (file) {
+    const url = URL.createObjectURL(file);
+    loadImage(url);
+  }
+});
+
+// 核心加载函数
+function loadImage(src) {
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    loadedImage = img;
+    // 显示原图(把它放入 <img> 标签里)
+    originalImg.src = src;
+    originalImg.style.display = 'block';
+
+    // 隐藏分割画布和拖拽区
+    displayCanvas.style.display = 'none';
+    orderContainer.style.display = 'none';
+    slices = [];
+
+    alert('图片加载成功！请设置分割参数后点击“分割”。');
+  };
+  img.onerror = () => {
+    alert('图片加载失败，请检查路径或文件。');
+  };
+  img.src = src;
+}
+
+// 默认尝试加载 image_code.png
+window.addEventListener('load', () => {
+  loadImage('image_code.png');
+});
+
+
+/*******************************************************
+ * 分割操作
+ *******************************************************/
+sliceBtn.addEventListener('click', () => {
+  if (!loadedImage || !loadedImage.width) {
+    alert('请先加载一张图片！');
+    return;
+  }
+  const vSlices = parseInt(verticalSlicesInput.value) || 1;
+  const hSlices = parseInt(horizontalSlicesInput.value) || 1;
+
+  slices = sliceImage(loadedImage, vSlices, hSlices);
+  if (!slices.length) {
+    alert('分割异常，请检查切割数值。');
+    return;
+  }
+
+  // 分割完成后，隐藏原图 <img>，显示 displayCanvas
+  originalImg.style.display = 'none';
+  displayCanvas.style.display = 'block';
+
+  // 更新画布显示
+  updateDisplayCanvas();
+
+  // 显示并更新序号拖拽列表
+  orderContainer.style.display = 'block';
+  updateOrderList();
+
+  alert(`分割完成！共得到 ${slices.length} 个切片。`);
+});
+
+// 分割实现：根据 vSlices & hSlices 双循环创建离屏 canvas
+function sliceImage(img, vSlices, hSlices) {
+  const w = img.width;
+  const h = img.height;
+  const result = [];
+
+  const sliceW = w / vSlices;
+  const sliceH = h / hSlices;
+
+  let idCounter = 0;
+  for (let row = 0; row < hSlices; row++) {
+    for (let col = 0; col < vSlices; col++) {
+      const x = col * sliceW;
+      const y = row * sliceH;
+
+      const offCanvas = document.createElement('canvas');
+      offCanvas.width = Math.ceil(sliceW);
+      offCanvas.height = Math.ceil(sliceH);
+      const offCtx = offCanvas.getContext('2d');
+      offCtx.drawImage(
+        img,
+        x, y, sliceW, sliceH,
+        0, 0, offCanvas.width, offCanvas.height
+      );
+
+      result.push({
+        id: idCounter++,  // 用于标识块
+        canvas: offCanvas
+      });
+    }
+  }
+  return result;
+}
+
+
+/*******************************************************
+ * 栅栏加密、解密、随机打乱
+ *******************************************************/
+// 栅栏加密
+fenceEncryptBtn.addEventListener('click', () => {
+  if (!slices.length) {
+    alert('还没有分割图像，无法加密！');
+    return;
+  }
+  const groupSize = parseInt(fenceGroupSizeInput.value) || 1;
+  applyFenceEncrypt(groupSize);
+  updateDisplayCanvas();
+  updateOrderList();
+});
+
+// 栅栏解密（逆操作）
+fenceDecryptBtn.addEventListener('click', () => {
+  if (!slices.length) {
+    alert('还没有分割图像，无法解密！');
+    return;
+  }
+  const groupSize = parseInt(fenceGroupSizeInput.value) || 1;
+  applyFenceDecrypt(groupSize);
+  updateDisplayCanvas();
+  updateOrderList();
+});
+
+// 随机打乱
+randomShuffleBtn.addEventListener('click', () => {
+  if (!slices.length) {
+    alert('还没有分割图像，无法打乱！');
+    return;
+  }
+  applyRandomShuffle();
+  updateDisplayCanvas();
+  updateOrderList();
+});
+
+// 栅栏加密逻辑
+function applyFenceEncrypt(groupSize) {
+  let newOrder = [];
+  for (let start = 0; start < groupSize; start++) {
+    for (let i = start; i < slices.length; i += groupSize) {
+      newOrder.push(slices[i]);
+    }
+  }
+  slices = newOrder;
+}
+
+// 栅栏解密逻辑
+function applyFenceDecrypt(groupSize) {
+  const L = slices.length;
+  let newOrder = new Array(L);
+
+  let index = 0;
+  for (let start = 0; start < groupSize; start++) {
+    for (let i = start; i < L; i += groupSize) {
+      newOrder[i] = slices[index];
+      index++;
+    }
+  }
+  slices = newOrder;
+}
+
+// 随机打乱（洗牌）
+function applyRandomShuffle() {
+  for (let i = slices.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [slices[i], slices[j]] = [slices[j], slices[i]];
+  }
+}
+
+
+/*******************************************************
+ * 显示当前切片顺序到画布
+ *******************************************************/
+function updateDisplayCanvas() {
+  if (!slices.length) return;
+  const w = loadedImage.width;
+  const h = loadedImage.height;
+  displayCanvas.width = w;
+  displayCanvas.height = h;
+  displayCtx.clearRect(0, 0, w, h);
+
+  const vSlices = parseInt(verticalSlicesInput.value) || 1;
+  const hSlices = parseInt(horizontalSlicesInput.value) || 1;
+  const sliceW = Math.ceil(w / vSlices);
+  const sliceH = Math.ceil(h / hSlices);
+
+  let offsetX = 0;
+  let offsetY = 0;
+  let sliceIndex = 0;
+
+  for (let row = 0; row < hSlices; row++) {
+    for (let col = 0; col < vSlices; col++) {
+      if (sliceIndex >= slices.length) break;
+      const piece = slices[sliceIndex];
+      displayCtx.drawImage(piece.canvas, offsetX, offsetY);
+      offsetX += sliceW;
+      sliceIndex++;
+    }
+    offsetX = 0;
+    offsetY += sliceH;
+  }
+}
+
+
+/*******************************************************
+ * 拖拽排序：让用户在右侧列表中拖拽编号，自定义顺序
+ *******************************************************/
+function updateOrderList() {
+  orderList.innerHTML = '';
+  slices.forEach((slice, idx) => {
+    const li = document.createElement('li');
+    li.textContent = slice.id;
+    li.draggable = true;
+    li.dataset.index = idx;
+
+    li.addEventListener('dragstart', handleDragStart);
+    li.addEventListener('dragover', handleDragOver);
+    li.addEventListener('dragleave', handleDragLeave);
+    li.addEventListener('drop', handleDrop);
+
+    orderList.appendChild(li);
+  });
+}
+
+let dragSrcEl = null;
+
+function handleDragStart(e) {
+  dragSrcEl = e.target;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', e.target.outerHTML); 
+  e.target.style.opacity = '0.4';
+}
+
+function handleDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  this.classList.add('dragover');
+}
+
+function handleDragLeave(e) {
+  this.classList.remove('dragover');
+}
+
+function handleDrop(e) {
+  e.stopPropagation();
+  e.preventDefault();
+  this.classList.remove('dragover');
+  if (dragSrcEl === this) return; // 如果拖拽源就是自己，则不处理
+
+  const srcIndex = parseInt(dragSrcEl.dataset.index);
+  const targetIndex = parseInt(this.dataset.index);
+
+  // 交换 slices 数组中这两个元素
+  [slices[srcIndex], slices[targetIndex]] = [slices[targetIndex], slices[srcIndex]];
+
+  // 重新渲染
+  updateDisplayCanvas();
+  updateOrderList();
+}
+</script>
+</body>
+</html>
